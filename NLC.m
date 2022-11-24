@@ -1,5 +1,5 @@
 function [C_ineq , C_eq] = NLC(C, D, c_k, G, g, x, U, Nc,Np,s_max2)
-sx = size(x,1);
+sx = size(x,1);     % Size of state vector
 C_in = zeros(Nc,size(C,2)+sx);
 for i = 1:Np-1 % it should be Nc (instead of Np-1) when we use control horzion!
     C_in(i,1:sx) = (C*x(:,i) + D*U(i) + c_k)'; % it has traspose! 

@@ -2,7 +2,7 @@ clc;clear all;close all;
 %% ------------------------------------------------------------------------
 % -------------------------- Initialization -------------------------------
 T0 = 0;
-Tf = 10;
+Tf = 3;
 Ts = 0.01;
 t  = T0:Ts:Tf;
 nt = numel(t);
@@ -21,7 +21,19 @@ c_bar = [0; 0];
 
 rho = 0;
 nu  = 0;
-
+desired_poles = [-0.1,-0.01];
+K = place(A,B,desired_poles);
+A_cl = (A - B*K);
+% Set W: Mw<m
+M = [0,1;
+     1,1;
+     1,0;
+     1,-1;
+     0,-1;
+     -1,-1;
+     -1,0;
+     -1,1];
+m = [0.01;0.015;0.01;0.015;0.01;0.015;0.01;0.015];
 
 X = zeros(2,nt);
 S = X;
@@ -39,7 +51,7 @@ a_max    = 10; a_min  = -10;
 s_max    = [rho_max; nu_max];
 s_min    = [rho_min; nu_min];
 
-H_states = [1;2];10*ones(size(X(:,1),1),1);
+H_states = [20;2];10*ones(size(X(:,1),1),1);
 H_input  = 0*ones(size(u(:,1),1),1);
 h_states = 0*ones(size(X(:,1),1),1);
 h_input  = 0*ones(size(u(:,1),1),1);
@@ -101,9 +113,13 @@ for i = 2:nt - Np
     [Uopts , Fval(i), EXITFLAG , OUTPUT] = fmincon(@(U)Cost_function(X0 , Ref(:,i:i+Np-1), U , U0 , Ts , Np , Nc , A , B , C_output , D_output,  gama , H , h , P, p ) , Uopts , A_lin , B_lin , Aeq , Beq , LB , UB , NonLCon, option);
 
     u(1,i-1) = Uopts(1,1);
-    U0 = Uopts(1,1);% Warm start
+    error = (S(:,i-1) - X(:,i-1))
+    %U0 = Uopts(1,1);% Warm start
     X(:,i) = A * X(:,i-1) + B * u(:,i-1);
-    X0 = X(:,i);
+    a(:,i-1) = u(:,i-1)- K*error;
+    U0 = a(:,i-1);
+    S(:,i) = A * S(:,i-1) + B * a(:,i-1) + cprnd(1,M,m)';%0.01*rand(2,1);
+    X0 = S(:,i);
     number_of_iteration(i) = OUTPUT.iterations;
     
 end
@@ -113,7 +129,7 @@ end
 % ------------------------------- Plots -----------------------------------
 figure(1);
 subplot(3,1,1) ;
-plot(t(1 , 1:nt-Np) , Ref(1 , 1:nt-Np) , t(1 , 1:nt-Np)  , X(1 , 1:nt-Np) , 'LineWidth' , 1.25) ; hold on
+plot(t(1 , 1:nt-Np) , Ref(1 , 1:nt-Np) , t(1 , 1:nt-Np)  , S(1 , 1:nt-Np) , 'LineWidth' , 1.25) ; hold on
 xlabel('t (sec)') ;
 ylabel('rho') ;
 title('Trajectory Tracking') ;set(gca,'FontSize',10);
@@ -121,7 +137,7 @@ grid minor
 legend('Reference Output','System Output')
 
 subplot(3,1,2) ;
-plot(t(1 , 1:nt-Np) , Ref(2 , 1:nt-Np) , t(1 , 1:nt-Np)  , X(2 , 1:nt-Np) , 'LineWidth' , 1.25) ; hold on
+plot(t(1 , 1:nt-Np) , Ref(2 , 1:nt-Np) , t(1 , 1:nt-Np)  , S(2 , 1:nt-Np) , 'LineWidth' , 1.25) ; hold on
 xlabel('t (sec)') ;
 ylabel('nu') ;
 title('Trajectory Tracking') ;set(gca,'FontSize',10);
@@ -129,14 +145,14 @@ grid minor
 legend('Reference Output','System Output')
 
 subplot(3,1,3) ;
-plot(t(1 , 1:nt-Np) , Ref(3 , 1:nt-Np) , t(1 , 1:nt-Np)  , u(: , 1:nt-Np) , 'LineWidth' , 1.25) ; hold on
+plot(t(1 , 1:nt-Np) , Ref(3 , 1:nt-Np) , t(1 , 1:nt-Np)  , a(: , 1:nt-Np) , 'LineWidth' , 1.25) ; hold on
 xlabel('t (sec)') ;
 ylabel('a') ;
 title('Input Value') ;set(gca,'FontSize',10);
 grid minor
 legend('Reference Output','System Output')
 
-
+%---------------------------------
 figure(2);
 plot(t(1:nt-Np)  ,Fval(1:nt-Np) , 'LineWidth' , 2) ; hold on
 xlabel('Time  (second)') ;
@@ -144,7 +160,7 @@ ylabel('Amp - CF') ;
 title('Cost Function Variation') ;
 grid on
 legend('Cost');
-
+%---------------------------------
 figure(3);
 plot(t(1:nt-Np)  ,number_of_iteration(1:nt-Np) , 'LineWidth' , 2) ; hold on
 xlabel('Time  (second)') ;
