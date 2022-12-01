@@ -6,8 +6,8 @@ C_in = zeros(Nc,sx);
 for i = 1:k
     C_in(i,:) = (teta.M*w(:,i) - teta.m)';
 end
-C_ineq = C_in';
-
+% C_ineq = C_in';
+C_ineq = C_in;
 C_eq = [] ;
 
 end
