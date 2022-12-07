@@ -1,6 +1,6 @@
-function loss = loss_rl(s, s_r, a, a_r)
+function loss = loss_rl(s, a)
 
-error = [s-s_r; a-a_r];
+error = [s-[1;0]; a];
 
 loss = error' * diag([1, 0.01, 0.01]) * error;
 
