@@ -1,5 +1,5 @@
 clc;clear all;close all;
-global  Ts Np Nc Nk_prime A B C D gama H h P p P_s A_cl C_cl
+global  Ts Np Nc Nk_prime A B C D gama H h P p P_s A_cl C_cl s_max2 M_theta c_bar LB UB
 %% ------------------------------------------------------------------------
 % -------------------------- Initialization -------------------------------
 T0 = 0;
@@ -23,9 +23,6 @@ C = [-1, 0;
      0,  0];
 D = [0; 0; 0; 0; 1; -1];
 c_bar = [-1; -1; -1; -1; -10; -10];
-
-rho = 0;
-nu  = 0;
 desired_poles = [-0.1,0.1];
 K = place(A,B,desired_poles);
 A_cl = (A - B*K);
@@ -39,15 +36,16 @@ M = [0,1;
      -1,-1;
      -1,0;
      -1,1];
-m = [0.01;0.015;0.01;0.015;0.01;0.015;0.01;0.015];
+m = 1*[0.01;0.015;0.01;0.015;0.01;0.015;0.01;0.015];
 M_theta = [0,1;
           1,0;
           0,-1;
           -1,0];
-m_theta = 1.5*[0.05;0.05;0.05;0.05];
+m_theta = 1*[0.05;0.05;0.05;0.05];
 theta.M = M_theta;
 theta.m = m_theta;
-
+rho = 0;
+nu  = 0;
 X      = zeros(2,nt);
 S      = X;
 X(:,1) = [rho; nu];
@@ -57,7 +55,7 @@ sigma  = zeros(size(C,1),nt);
 a      = u;
 
 % MPC parameters
-Np       = 30;
+Np       = 10;
 Nk_prime = 1; % it is for forming the terminal constraint which is used k_prime in eq(26),
 % however by value=0 it means that we only have constrait for k=Np, no more!
 Nc        = Np;
@@ -70,8 +68,8 @@ sigma_min = 0*ones(1,size(C,1)); % sigma must be greater than 0!
 sigma_max = 10*ones(1,size(C,1));
 
 
-H_states = [2;2];10*ones(size(X(:,1),1),1);
-H_input  = 0*ones(size(u(:,1),1),1);
+H_states = [1;0.01];%10*ones(size(X(:,1),1),1);
+H_input  = 0.01*ones(size(u(:,1),1),1);
 h_states = 0*ones(size(X(:,1),1),1);
 h_input  = 0*ones(size(u(:,1),1),1);
 P        = 0*eye(size(X(:,1),1));
@@ -83,14 +81,14 @@ A_lin = [];
 B_lin = [];
 Aeq = [];
 Beq = [];
-Opt_Iter = 30;
+Opt_Iter = 10;
 algorithm_name = 'active-set';
 
 
 %% ------------------------------------------------------------------------
 % ------------------------ Refrence Trajectory ----------------------------
-rho_r = 1*((t>=25)&(t<=120)) + -1*((t<25)|(t>120));
-% rho_r = 1*ones(1,nt);
+%rho_r = 1*((t>=5)&(t<=20)) + -1*((t<5)|(t>25));
+rho_r = 1*ones(1,nt);
 nu_r  = 0*ones(1,nt);
 a_r   = 0*ones(1,nt); % (?)
 
@@ -121,34 +119,43 @@ h    = repmat(hh,Np,1);
 P_s = reshape(repmat(P_sigma,Np,1),[1,size(C,1)*Np]);
 
 LB = repmat([a_min,sigma_min] , Nc,1) ;  % lower bond of input signal
-UB = [];repmat([a_max,sigma_max] , Nc,1) ;  % upper bond of input signal 
+UB = [];repmat([a_max,sigma_max] , Nc,1) ;  % upper bond of input signal
+lb = zeros(1,4);       %lower bound for theta.m
+ub = 1*ones(1,4);        %%upper bound for theta.m
 s_max2 = s_max.^2;
-
 Fval = zeros(1,nt);
 number_of_iteration = zeros(1,nt);
 option = optimset('MaxIter',Opt_Iter,'Display','off','Algorithm',algorithm_name);
 option_disturb = optimset('MaxIter',Opt_Iter,'Display','off','Algorithm',algorithm_name);
-
+option_psi = optimset('MaxIter',Opt_Iter,'Display','off','Algorithm','sqp');
+d = d_update(theta,option_disturb);
+q = q_update(theta,option_disturb);
 for i = 2:nt - Np
-    if i == 2
-        d = d_update(theta,option_disturb);
-        q = q_update(theta,option_disturb);
-    end
-    
-    NonLCon = @(U)NLC(c_bar, d, q, X(:,i-1:i+Np), U, s_max2) ;
-    [U_sigma_opt , Fval(i), EXITFLAG , OUTPUT] = fmincon(@(U)Q(X0 , Ref(:,i:i+Np), U , U0) , ...
+    NonLCon = @(U)NLC(d, q, X, i , U) ;
+    [U_sigma_opt , Fval(i), ~ , out] = fmincon(@(U)V(S , Ref, i, U) , ...
                                                     U_sigma_opt , A_lin , B_lin , Aeq , Beq , LB , UB , NonLCon, option);
-   
     u(1,i-1) = U_sigma_opt(1,1);
     sigma(:,i-1) = U_sigma_opt(1,2:end);
     error = (S(:,i-1) - X(:,i-1));
     X(:,i) = A * X(:,i-1) + B * u(:,i-1);
     a(:,i-1) = u(:,i-1)- K*error;
     U0 = a(:,i-1);
-    S(:,i) = A * S(:,i-1) + B * a(:,i-1) + 0*noise(:,i);
-    X0 = S(:,i);
-    number_of_iteration(i) = OUTPUT.iterations;
-    
+    S(:,i) = A * S(:,i-1) + B * a(:,i-1) + 1*noise(:,i);
+    number_of_iteration(i) = out.iterations;
+    if rem(i, 5) == 0
+       m_1 = theta.m;
+       [k,av] = convhull(noise(:,1:i)');
+       n1 = noise(:,k);
+       RLCon = @(m_1)RL_C(theta.M, m_1, n1) ;
+       [m_new , costs, ~, ~] = fmincon(@(m_1)psi1(X, S, Ref, i, U0, m_1) , ...
+                                     m_1 , A_lin , B_lin , Aeq , Beq , lb, ub, RLCon, option_psi);
+       disp(i)
+       disp(costs)
+       disp(m_new)
+       theta.m = m_new;
+       d = d_update(theta,option_disturb);
+       q = q_update(theta,option_disturb);
+    end
 end
 
 
@@ -180,21 +187,21 @@ grid minor
 legend('Reference Output','System Output')
 
 %---------------------------------
-figure(2);
-plot(t(1:nt-Np)  ,Fval(1:nt-Np) , 'LineWidth' , 2) ; hold on
-xlabel('Time  (second)') ;
-ylabel('Amp - CF') ;
-title('Cost Function Variation') ;
-grid on
-legend('Cost');
+% figure(2);
+% plot(t(1:nt-Np)  ,Fval(1:nt-Np) , 'LineWidth' , 2) ; hold on
+% xlabel('Time  (second)') ;
+% ylabel('Amp - CF') ;
+% title('Cost Function Variation') ;
+% grid on
+% legend('Cost');
 %---------------------------------
-figure(3);
-plot(t(1:nt-Np)  ,number_of_iteration(1:nt-Np) , 'LineWidth' , 2) ; hold on
-xlabel('Time  (second)') ;
-ylabel('number') ;
-title('number of iteration') ;
-grid on
-legend('iterations');
+% figure(3);
+% plot(t(1:nt-Np)  ,number_of_iteration(1:nt-Np) , 'LineWidth' , 2) ; hold on
+% xlabel('Time  (second)') ;
+% ylabel('number') ;
+% title('number of iteration') ;
+% grid on
+% legend('iterations');
 %---------------------------------
 figure(4);
 plot(t(1:nt-Np)  ,sigma(:,1:nt-Np) , 'LineWidth' , 2) ; hold on

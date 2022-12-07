@@ -1,0 +1,28 @@
+function Z = psi1(X, S, Ref, i, U0, m_theta)
+global Np M_theta LB UB
+
+algorithm_name = 'active-set';
+Opt_Iter = 30;
+option = optimset('MaxIter',Opt_Iter,'Display','off','Algorithm', algorithm_name);
+option_disturb = optimset('MaxIter',Opt_Iter,'Display','off','Algorithm',algorithm_name);
+U_sigma_opt = zeros(Np,7);
+X0 = S(:,i-1);
+l = loss_rl(X0, U0);
+theta.M = M_theta;
+theta.m = m_theta;
+d = d_update(theta,option_disturb);
+q = q_update(theta,option_disturb);
+
+NonLCon = @(U)NLC(d, q, X, i , U) ;
+[~ , v, ~ , ~] = fmincon(@(U)V(S , Ref, i+1, U) , ...
+                               U_sigma_opt , [] , [] , [] , [] , LB, UB, NonLCon, option);
+NonLCon = @(U)NLC(d, q, X, i , U) ;
+[~ , v, ~ , ~] = fmincon(@(U)V(S , Ref, i+1, U) , ...
+                               U_sigma_opt , [] , [] , [] , [] , LB, UB, NonLCon, option);
+% NonLCon1 = @(U)NLC1(d, q, X, i , U, U0) ;
+% [~ , q_, ~ , ~] = fmincon(@(U)Q1(S , Ref, i, U, U0) , ...
+%                                  U_sigma_opt(1:9,1:7) , [] , [] , [] , [] , LB(1:9,:) , UB , NonLCon1, option);
+Z = (l + v - q_)^2;
+end
+
+
